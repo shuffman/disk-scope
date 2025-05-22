@@ -73,9 +73,9 @@ sub analyze {
     
     # Create a new run record
     my $username = getlogin() || getpwuid($<) || "Unknown";
-    my $t = time();
-    my @lt = localtime($t);
-    my $start_date = strftime("%Y-%m-%d %H:%M:%S", @lt);
+    my $now = time();
+    my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($now);
+    my $start_date = strftime("%Y-%m-%d %H:%M:%S", $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst);
     
     $dbh->do("INSERT INTO run (start_date, user, path, min_size) VALUES (?, ?, ?, ?)",
              undef, $start_date, $username, $scan_path, $min_size_str);
@@ -94,8 +94,8 @@ sub analyze {
             
             if ($stat && $stat->size >= $min_size) {
                 my $owner = getpwuid($stat->uid) || $stat->uid;
-                my @mod_time = localtime($stat->mtime);
-                my $modified = strftime("%Y-%m-%d %H:%M:%S", @mod_time);
+                my ($f_sec, $f_min, $f_hour, $f_mday, $f_mon, $f_year, $f_wday, $f_yday, $f_isdst) = localtime($stat->mtime);
+                my $modified = strftime("%Y-%m-%d %H:%M:%S", $f_sec, $f_min, $f_hour, $f_mday, $f_mon, $f_year, $f_wday, $f_yday, $f_isdst);
                 
                 $dbh->do("INSERT INTO file (run_id, path, size, owner, modified) VALUES (?, ?, ?, ?, ?)",
                          undef, $run_id, $file_path, $stat->size, $owner, $modified);
@@ -110,9 +110,9 @@ sub analyze {
     }, $scan_path);
     
     # Update run record with end date
-    my $t_end = time();
-    my @lt_end = localtime($t_end);
-    my $end_date = strftime("%Y-%m-%d %H:%M:%S", @lt_end);
+    my $end_time = time();
+    my ($e_sec, $e_min, $e_hour, $e_mday, $e_mon, $e_year, $e_wday, $e_yday, $e_isdst) = localtime($end_time);
+    my $end_date = strftime("%Y-%m-%d %H:%M:%S", $e_sec, $e_min, $e_hour, $e_mday, $e_mon, $e_year, $e_wday, $e_yday, $e_isdst);
     $dbh->do("UPDATE run SET end_date = ? WHERE id = ?", undef, $end_date, $run_id);
     
     print "Analysis complete. Found $file_count files >= $min_size_str\n";
