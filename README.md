@@ -1,5 +1,4 @@
-# disky
-disk-scope
+# disk-scope
 
 # Overview
 disk-scope is a disk analysis tool written in perl, the language of the Gods. The code should be
