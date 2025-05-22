@@ -1,0 +1,410 @@
+% layout 'default';
+% title 'Disk Scope';
+
+<div class="container">
+  <div class="row">
+    <!-- Runs List -->
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-header">Analysis Runs</div>
+        <div class="card-body p-0">
+          <div id="loader">
+            <div class="d-flex justify-content-center p-3">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </div>
+          <ul id="runs-list" class="list-group list-group-flush">
+            <!-- Runs will be loaded here -->
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Run Details -->
+    <div class="col-md-8">
+      <div id="run-details" style="display: none;">
+        <div class="card mb-4">
+          <div class="card-header">Run Details</div>
+          <div class="card-body">
+            <h5 id="run-path" class="card-title"></h5>
+            <div class="row">
+              <div class="col-md-6">
+                <p><strong>Run ID:</strong> <span id="run-id"></span></p>
+                <p><strong>User:</strong> <span id="run-user"></span></p>
+              </div>
+              <div class="col-md-6">
+                <p><strong>Start Date:</strong> <span id="run-start-date"></span></p>
+                <p><strong>End Date:</strong> <span id="run-end-date"></span></p>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <p><strong>Total Files:</strong> <span id="total-files"></span></p>
+              </div>
+              <div class="col-md-6">
+                <p><strong>Total Size:</strong> <span id="total-size"></span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">Size Distribution</div>
+              <div class="card-body">
+                <div class="chart-container">
+                  <canvas id="size-chart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">Owner Distribution</div>
+              <div class="card-body">
+                <div class="chart-container">
+                  <canvas id="owner-chart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row mt-4">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">Size Distribution</div>
+              <div class="card-body">
+                <table class="table table-striped sortable">
+                  <thead>
+                    <tr>
+                      <th>Size Range</th>
+                      <th>File Count</th>
+                      <th>Total Size</th>
+                    </tr>
+                  </thead>
+                  <tbody id="size-distribution-table">
+                    <!-- Size distribution data will be loaded here -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">Age Distribution</div>
+              <div class="card-body">
+                <table class="table table-striped sortable">
+                  <thead>
+                    <tr>
+                      <th>Age Range</th>
+                      <th>File Count</th>
+                      <th>Total Size</th>
+                    </tr>
+                  </thead>
+                  <tbody id="age-distribution-table">
+                    <!-- Age distribution data will be loaded here -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-4">
+          <div class="card-header">Largest Files</div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-striped sortable">
+                <thead>
+                  <tr>
+                    <th>Path</th>
+                    <th>Size</th>
+                    <th>Owner</th>
+                    <th>Modified</th>
+                  </tr>
+                </thead>
+                <tbody id="files-table-body">
+                  <!-- Files will be loaded here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div id="welcome-message" class="card">
+        <div class="card-body text-center">
+          <h3>Welcome to Disk Scope</h3>
+          <p class="lead">Select an analysis run from the list to view its details.</p>
+          <p>Use the command-line tool to perform new analyses:</p>
+          <pre class="bg-light p-3 text-start">disk-scope analyze --db disk-scope.db --path /your/path --min-size 100MB</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    fetchRuns();
+  });
+
+  // Function to fetch runs from API
+  function fetchRuns() {
+    fetch('/api/runs')
+      .then(response => response.json())
+      .then(runs => {
+        displayRuns(runs);
+      })
+      .catch(error => {
+        console.error('Error fetching runs:', error);
+        document.getElementById('loader').innerHTML = 
+          '<div class="alert alert-danger m-3">Error loading runs. Please check your database connection.</div>';
+      });
+  }
+
+  // Function to display runs in the list
+  function displayRuns(runs) {
+    const runsList = document.getElementById('runs-list');
+    document.getElementById('loader').style.display = 'none';
+    
+    if (runs.length === 0) {
+      runsList.innerHTML = '<li class="list-group-item">No analysis runs found. Use the command-line tool to create one.</li>';
+      return;
+    }
+    
+    runsList.innerHTML = '';
+    runs.forEach(run => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item run-item';
+      li.setAttribute('data-run-id', run.id);
+      li.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <strong>Run #${run.id}</strong><br>
+            <small>${run.path}</small>
+          </div>
+          <div class="text-end">
+            <span class="badge bg-primary">${run.file_count} files</span><br>
+            <small>${run.formatted_size}</small>
+          </div>
+        </div>
+      `;
+      li.addEventListener('click', function() {
+        document.querySelectorAll('.run-item').forEach(item => {
+          item.classList.remove('active');
+        });
+        this.classList.add('active');
+        fetchRunDetails(run.id);
+      });
+      runsList.appendChild(li);
+    });
+  }
+
+  // Function to fetch run details
+  function fetchRunDetails(runId) {
+    document.getElementById('welcome-message').style.display = 'none';
+    document.getElementById('run-details').style.display = 'none';
+    
+    fetch(`/api/runs/${runId}`)
+      .then(response => response.json())
+      .then(data => {
+        displayRunDetails(data.run, data.stats);
+        fetchVisualizations(runId);
+      })
+      .catch(error => {
+        console.error('Error fetching run details:', error);
+      });
+  }
+
+  // Function to display run details
+  function displayRunDetails(run, stats) {
+    document.getElementById('run-path').textContent = run.path;
+    document.getElementById('run-id').textContent = run.id;
+    document.getElementById('run-user').textContent = run.user;
+    document.getElementById('run-start-date').textContent = run.start_date;
+    document.getElementById('run-end-date').textContent = run.end_date || 'N/A';
+    document.getElementById('total-files').textContent = stats.total_files.toLocaleString();
+    document.getElementById('total-size').textContent = stats.formatted_total_size;
+    
+    // Display top files
+    const filesTableBody = document.getElementById('files-table-body');
+    filesTableBody.innerHTML = '';
+    
+    stats.top_files.forEach(file => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${file.path}</td>
+        <td>${file.formatted_size}</td>
+        <td>${file.owner}</td>
+        <td>${file.modified}</td>
+      `;
+      filesTableBody.appendChild(tr);
+    });
+    
+    // Display size distribution
+    const sizeDistTable = document.getElementById('size-distribution-table');
+    sizeDistTable.innerHTML = '';
+    
+    Object.entries(stats.size_distribution).forEach(([range, data]) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${range}</td>
+        <td>${data.count.toLocaleString()}</td>
+        <td>${data.formatted_size}</td>
+      `;
+      sizeDistTable.appendChild(tr);
+    });
+    
+    // Display age distribution
+    const ageDistTable = document.getElementById('age-distribution-table');
+    ageDistTable.innerHTML = '';
+    
+    Object.entries(stats.age_distribution).forEach(([range, data]) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${range}</td>
+        <td>${data.count.toLocaleString()}</td>
+        <td>${data.formatted_size}</td>
+      `;
+      ageDistTable.appendChild(tr);
+    });
+    
+    document.getElementById('run-details').style.display = 'block';
+    
+    // Make tables sortable after populating
+    sorttable.makeSortable(document.getElementById('files-table-body').closest('table'));
+    sorttable.makeSortable(document.getElementById('size-distribution-table').closest('table'));
+    sorttable.makeSortable(document.getElementById('age-distribution-table').closest('table'));
+  }
+
+  // Function to fetch and display visualizations
+  function fetchVisualizations(runId) {
+    // Fetch size distribution data
+    fetch(`/api/runs/${runId}/visualization/size_distribution`)
+      .then(response => response.json())
+      .then(data => {
+        createSizeChart(data);
+      })
+      .catch(error => {
+        console.error('Error fetching size distribution:', error);
+      });
+    
+    // Fetch owner distribution data
+    fetch(`/api/runs/${runId}/visualization/owner_distribution`)
+      .then(response => response.json())
+      .then(data => {
+        createOwnerChart(data);
+      })
+      .catch(error => {
+        console.error('Error fetching owner distribution:', error);
+      });
+  }
+
+  // Function to create size distribution chart
+  function createSizeChart(data) {
+    const ctx = document.getElementById('size-chart').getContext('2d');
+    
+    // Destroy existing chart if it exists
+    if (window.sizeChart instanceof Chart) {
+      window.sizeChart.destroy();
+    }
+    
+    window.sizeChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.categories,
+        datasets: [
+          {
+            label: 'File Count',
+            data: data.counts,
+            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1,
+            yAxisID: 'y',
+          },
+          {
+            label: 'Total Size',
+            data: data.sizes,
+            backgroundColor: 'rgba(255, 99, 132, 0.5)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 1,
+            yAxisID: 'y1',
+            type: 'line',
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            title: {
+              display: true,
+              text: 'File Count'
+            }
+          },
+          y1: {
+            type: 'linear',
+            display: true,
+            position: 'right',
+            title: {
+              display: true,
+              text: 'Total Size (bytes)'
+            },
+            grid: {
+              drawOnChartArea: false
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // Function to create owner distribution chart
+  function createOwnerChart(data) {
+    const ctx = document.getElementById('owner-chart').getContext('2d');
+    
+    // Destroy existing chart if it exists
+    if (window.ownerChart instanceof Chart) {
+      window.ownerChart.destroy();
+    }
+    
+    window.ownerChart = new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: data.owners,
+        datasets: [
+          {
+            data: data.sizes,
+            backgroundColor: [
+              'rgba(255, 99, 132, 0.7)',
+              'rgba(54, 162, 235, 0.7)',
+              'rgba(255, 206, 86, 0.7)',
+              'rgba(75, 192, 192, 0.7)',
+              'rgba(153, 102, 255, 0.7)',
+              'rgba(255, 159, 64, 0.7)',
+              'rgba(199, 199, 199, 0.7)',
+              'rgba(83, 102, 255, 0.7)',
+              'rgba(40, 159, 64, 0.7)',
+              'rgba(210, 199, 199, 0.7)'
+            ],
+            borderWidth: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false
+      }
+    });
+  }
+</script>

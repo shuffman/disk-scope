@@ -13,7 +13,7 @@ use Mojolicious::Lite;
 # Routes for the web interface
 get '/' => sub {
     my $c = shift;
-    $c->render(template => 'index', handler => 'ep');
+    $c->render(template => 'index', format => 'html');
 };
 
 # API route to get all runs
@@ -55,7 +55,7 @@ get '/api/runs/:id' => sub {
     
     unless ($run) {
         $dbh->disconnect();
-        return ($c->render(json => { error => "Run ID $run_id not found" }, status => 404));
+        return $c->render(json => { error => "Run ID $run_id not found" }, status => 404);
     }
     
     # Get file statistics
@@ -299,18 +299,11 @@ sub format_size {
     return sprintf("%.2f %s", $size, $units[$i]);
 }
 
-# Set up template
-app->renderer->paths->[0] = app->home->rel_file('templates');
-
-# Create templates directory if it doesn't exist
-unless (-d app->home->rel_file('templates')) {
-    mkdir app->home->rel_file('templates');
-}
-
-# Write index template to file
+# Create index.html.ep template file if it doesn't exist
 my $template_file = app->home->rel_file('templates/index.html.ep');
-open my $fh, '>', $template_file or die "Could not open $template_file: $!";
-print $fh <<'EOT';
+unless (-f $template_file) {
+    open my $fh, '>', $template_file or die "Could not open $template_file: $!";
+    print $fh <<'EOT';
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -761,7 +754,7 @@ print $fh <<'EOT';
 </body>
 </html>
 EOT
-
-close $fh;
+    close $fh;
+}
 
 1; 

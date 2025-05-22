@@ -254,14 +254,359 @@ sub web {
     # Make the database path absolute if it's not already
     $db_path = File::Spec->rel2abs($db_path) unless File::Spec->file_name_is_absolute($db_path);
     
-    # Set the database path as an app variable
+    # Remove any existing Mojolicious instance and start fresh
+    no warnings 'once';
+    undef $Mojolicious::Lite::APP;
+    
+    # Initialize a new Mojolicious app
+    use Mojolicious::Lite -signatures;
+    
+    # Set up app configuration
     app->config(db_path => $db_path);
+    app->log->level('info');
     
-    # Include the web application routes and templates
-    do "$Bin/lib/WebApp.pm" or die "Failed to load WebApp.pm: $@";
+    # Set up static file serving
+    app->static->paths->[0] = "$Bin/public";
     
-    # Start the Mojolicious web server
-    app->start('daemon', '-l', 'http://*:3000');
+    # Define route for home page
+    get '/' => sub ($c) {
+        $c->render(template => 'index');
+    };
+    
+    # API route to get all runs
+    get '/api/runs' => sub ($c) {
+        my $dbh = _get_db_connection($c->app->config('db_path'));
+        
+        my $sth = $dbh->prepare("SELECT id, start_date, end_date, user, path, min_size FROM run ORDER BY id DESC");
+        $sth->execute();
+        
+        my @runs;
+        while (my $row = $sth->fetchrow_hashref) {
+            # Add file counts and total size for each run
+            my $count_sth = $dbh->prepare("SELECT COUNT(*) as file_count, SUM(size) as total_size FROM file WHERE run_id = ?");
+            $count_sth->execute($row->{id});
+            my $count_data = $count_sth->fetchrow_hashref;
+            
+            $row->{file_count} = $count_data->{file_count} || 0;
+            $row->{total_size} = $count_data->{total_size} || 0;
+            $row->{formatted_size} = format_size($row->{total_size});
+            
+            push @runs, $row;
+        }
+        
+        $dbh->disconnect();
+        
+        $c->render(json => \@runs);
+    };
+    
+    # API route to get details for a specific run
+    get '/api/runs/:id' => sub ($c) {
+        my $run_id = $c->param('id');
+        my $dbh = _get_db_connection($c->app->config('db_path'));
+        
+        my $run_sth = $dbh->prepare("SELECT * FROM run WHERE id = ?");
+        $run_sth->execute($run_id);
+        my $run = $run_sth->fetchrow_hashref;
+        
+        unless ($run) {
+            $dbh->disconnect();
+            return $c->render(json => { error => "Run ID $run_id not found" }, status => 404);
+        }
+        
+        # Get file statistics
+        my $stats = {
+            total_files => 0,
+            total_size => 0,
+            size_distribution => {
+                '< 1MB' => { count => 0, size => 0 },
+                '1-10MB' => { count => 0, size => 0 },
+                '10-100MB' => { count => 0, size => 0 },
+                '100MB-1GB' => { count => 0, size => 0 },
+                '> 1GB' => { count => 0, size => 0 },
+            },
+            age_distribution => {
+                '< 1 week' => { count => 0, size => 0 },
+                '1-4 weeks' => { count => 0, size => 0 },
+                '1-3 months' => { count => 0, size => 0 },
+                '3-6 months' => { count => 0, size => 0 },
+                '> 6 months' => { count => 0, size => 0 },
+            },
+            owner_distribution => {},
+        };
+        
+        my $files_sth = $dbh->prepare("SELECT * FROM file WHERE run_id = ?");
+        $files_sth->execute($run_id);
+        
+        my $now = time();
+        
+        while (my $file = $files_sth->fetchrow_hashref) {
+            $stats->{total_files}++;
+            $stats->{total_size} += $file->{size};
+            
+            # Size distribution
+            my $size_mb = $file->{size} / (1024 * 1024);
+            if ($size_mb < 1) {
+                $stats->{size_distribution}{'< 1MB'}{count}++;
+                $stats->{size_distribution}{'< 1MB'}{size} += $file->{size};
+            } elsif ($size_mb < 10) {
+                $stats->{size_distribution}{'1-10MB'}{count}++;
+                $stats->{size_distribution}{'1-10MB'}{size} += $file->{size};
+            } elsif ($size_mb < 100) {
+                $stats->{size_distribution}{'10-100MB'}{count}++;
+                $stats->{size_distribution}{'10-100MB'}{size} += $file->{size};
+            } elsif ($size_mb < 1024) {
+                $stats->{size_distribution}{'100MB-1GB'}{count}++;
+                $stats->{size_distribution}{'100MB-1GB'}{size} += $file->{size};
+            } else {
+                $stats->{size_distribution}{'> 1GB'}{count}++;
+                $stats->{size_distribution}{'> 1GB'}{size} += $file->{size};
+            }
+            
+            # Age distribution
+            my $mod_time = str2time($file->{modified});
+            my $age_seconds = $now - $mod_time;
+            my $age_days = $age_seconds / (24 * 60 * 60);
+            
+            if ($age_days < 7) {
+                $stats->{age_distribution}{'< 1 week'}{count}++;
+                $stats->{age_distribution}{'< 1 week'}{size} += $file->{size};
+            } elsif ($age_days < 28) {
+                $stats->{age_distribution}{'1-4 weeks'}{count}++;
+                $stats->{age_distribution}{'1-4 weeks'}{size} += $file->{size};
+            } elsif ($age_days < 90) {
+                $stats->{age_distribution}{'1-3 months'}{count}++;
+                $stats->{age_distribution}{'1-3 months'}{size} += $file->{size};
+            } elsif ($age_days < 180) {
+                $stats->{age_distribution}{'3-6 months'}{count}++;
+                $stats->{age_distribution}{'3-6 months'}{size} += $file->{size};
+            } else {
+                $stats->{age_distribution}{'> 6 months'}{count}++;
+                $stats->{age_distribution}{'> 6 months'}{size} += $file->{size};
+            }
+            
+            # Owner distribution
+            my $owner = $file->{owner} || 'unknown';
+            $stats->{owner_distribution}{$owner} ||= { count => 0, size => 0 };
+            $stats->{owner_distribution}{$owner}{count}++;
+            $stats->{owner_distribution}{$owner}{size} += $file->{size};
+        }
+        
+        # Format sizes
+        $stats->{formatted_total_size} = format_size($stats->{total_size});
+        
+        foreach my $category (keys %{$stats->{size_distribution}}) {
+            $stats->{size_distribution}{$category}{formatted_size} = 
+                format_size($stats->{size_distribution}{$category}{size});
+        }
+        
+        foreach my $category (keys %{$stats->{age_distribution}}) {
+            $stats->{age_distribution}{$category}{formatted_size} = 
+                format_size($stats->{age_distribution}{$category}{size});
+        }
+        
+        foreach my $owner (keys %{$stats->{owner_distribution}}) {
+            $stats->{owner_distribution}{$owner}{formatted_size} = 
+                format_size($stats->{owner_distribution}{$owner}{size});
+        }
+        
+        # Get top files by size
+        my $top_files_sth = $dbh->prepare("SELECT * FROM file WHERE run_id = ? ORDER BY size DESC LIMIT 100");
+        $top_files_sth->execute($run_id);
+        
+        my @top_files;
+        while (my $file = $top_files_sth->fetchrow_hashref) {
+            $file->{formatted_size} = format_size($file->{size});
+            push @top_files, $file;
+        }
+        
+        $stats->{top_files} = \@top_files;
+        
+        $dbh->disconnect();
+        
+        $c->render(json => {
+            run => $run,
+            stats => $stats,
+        });
+    };
+    
+    # API route to get data for visualizations
+    get '/api/runs/:id/visualization/:type' => sub ($c) {
+        my $run_id = $c->param('id');
+        my $viz_type = $c->param('type');
+        my $dbh = _get_db_connection($c->app->config('db_path'));
+        
+        my $data;
+        
+        if ($viz_type eq 'size_distribution') {
+            my $query = "SELECT 
+                CASE 
+                    WHEN size < 1048576 THEN '< 1MB'
+                    WHEN size < 10485760 THEN '1-10MB'
+                    WHEN size < 104857600 THEN '10-100MB'
+                    WHEN size < 1073741824 THEN '100MB-1GB'
+                    ELSE '> 1GB'
+                END as category,
+                COUNT(*) as count,
+                SUM(size) as total_size
+                FROM file 
+                WHERE run_id = ?
+                GROUP BY category
+                ORDER BY 
+                CASE category
+                    WHEN '< 1MB' THEN 1
+                    WHEN '1-10MB' THEN 2
+                    WHEN '10-100MB' THEN 3
+                    WHEN '100MB-1GB' THEN 4
+                    WHEN '> 1GB' THEN 5
+                END";
+            
+            my $sth = $dbh->prepare($query);
+            $sth->execute($run_id);
+            
+            my @categories;
+            my @counts;
+            my @sizes;
+            
+            while (my $row = $sth->fetchrow_hashref) {
+                push @categories, $row->{category};
+                push @counts, $row->{count};
+                push @sizes, $row->{total_size};
+            }
+            
+            $data = {
+                categories => \@categories,
+                counts => \@counts,
+                sizes => \@sizes,
+                formatted_sizes => [map { format_size($_) } @sizes],
+            };
+        } elsif ($viz_type eq 'owner_distribution') {
+            my $query = "SELECT 
+                owner, 
+                COUNT(*) as count,
+                SUM(size) as total_size
+                FROM file 
+                WHERE run_id = ?
+                GROUP BY owner
+                ORDER BY total_size DESC
+                LIMIT 10";
+            
+            my $sth = $dbh->prepare($query);
+            $sth->execute($run_id);
+            
+            my @owners;
+            my @counts;
+            my @sizes;
+            
+            while (my $row = $sth->fetchrow_hashref) {
+                push @owners, $row->{owner} || 'unknown';
+                push @counts, $row->{count};
+                push @sizes, $row->{total_size};
+            }
+            
+            $data = {
+                owners => \@owners,
+                counts => \@counts,
+                sizes => \@sizes,
+                formatted_sizes => [map { format_size($_) } @sizes],
+            };
+        }
+        
+        $dbh->disconnect();
+        
+        $c->render(json => $data);
+    };
+    
+    # Helper function to get database connection
+    sub _get_db_connection {
+        my ($db_path) = @_;
+        
+        return DBI->connect("dbi:SQLite:dbname=$db_path", "", "", {
+            RaiseError => 1,
+            AutoCommit => 1,
+        }) or die "Cannot connect to database: $DBI::errstr";
+    }
+    
+    # Create templates directory if it doesn't exist
+    my $template_dir = "$Bin/templates";
+    mkdir $template_dir unless -d $template_dir;
+    
+    # Create index template if it doesn't exist
+    my $index_file = "$template_dir/index.html.ep";
+    unless (-f $index_file) {
+        open my $fh, '>', $index_file or die "Could not open $index_file: $!";
+        print $fh <<'EOT';
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Disk Scope</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <h1 class="mt-4 mb-4">Disk Scope</h1>
+    
+    <div class="row">
+      <div class="col-md-12">
+        <div class="card">
+          <div class="card-header">Analysis Runs</div>
+          <div class="card-body">
+            <div id="loader">Loading runs...</div>
+            <div id="runs-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      fetch('/api/runs')
+        .then(response => response.json())
+        .then(runs => {
+          const runsList = document.getElementById('runs-list');
+          document.getElementById('loader').style.display = 'none';
+          
+          if (runs.length === 0) {
+            runsList.innerHTML = '<p>No analysis runs found. Use the command-line tool to create one.</p>';
+            return;
+          }
+          
+          let html = '<ul class="list-group">';
+          runs.forEach(run => {
+            html += `
+              <li class="list-group-item">
+                <div class="d-flex justify-content-between">
+                  <div>
+                    <strong>Run #${run.id}</strong><br>
+                    <small>${run.path}</small>
+                  </div>
+                  <div class="text-end">
+                    <span class="badge bg-primary">${run.file_count} files</span><br>
+                    <small>${run.formatted_size}</small>
+                  </div>
+                </div>
+              </li>
+            `;
+          });
+          html += '</ul>';
+          
+          runsList.innerHTML = html;
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          document.getElementById('loader').innerHTML = 
+            '<div class="alert alert-danger">Error loading runs</div>';
+        });
+    });
+  </script>
+</body>
+</html>
+EOT
+        close $fh;
+    }
+    
+    # Start the web server
+    app->start('daemon', '-l', 'http://*:3001');
 }
 
 sub show_help {
