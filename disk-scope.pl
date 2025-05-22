@@ -74,16 +74,8 @@ sub analyze {
     # Create a new run record
     my $username = getlogin() || getpwuid($<) || "Unknown";
     
-    # Format current time as YYYY-MM-DD HH:MM:SS
-    my $start_date = scalar(localtime);
-    $start_date =~ s/^(\w+)\s+(\w+)\s+(\d+)\s+(\d+):(\d+):(\d+)\s+(\d+)$/$7-$2-$3 $4:$5:$6/;
-    # Convert month name to number
-    my %months = (
-        'Jan' => '01', 'Feb' => '02', 'Mar' => '03', 'Apr' => '04',
-        'May' => '05', 'Jun' => '06', 'Jul' => '07', 'Aug' => '08',
-        'Sep' => '09', 'Oct' => '10', 'Nov' => '11', 'Dec' => '12'
-    );
-    $start_date =~ s/-(\w+)-/-$months{$1}-/;
+    # Format current time
+    my $start_date = format_datetime(time());
     
     $dbh->do("INSERT INTO run (start_date, user, path, min_size) VALUES (?, ?, ?, ?)",
              undef, $start_date, $username, $scan_path, $min_size_str);
@@ -104,10 +96,7 @@ sub analyze {
                 my $owner = getpwuid($stat->uid) || $stat->uid;
                 
                 # Format modified time
-                my $modified = scalar(localtime($stat->mtime));
-                $modified =~ s/^(\w+)\s+(\w+)\s+(\d+)\s+(\d+):(\d+):(\d+)\s+(\d+)$/$7-$2-$3 $4:$5:$6/;
-                # Convert month name to number
-                $modified =~ s/-(\w+)-/-$months{$1}-/;
+                my $modified = format_datetime($stat->mtime);
                 
                 $dbh->do("INSERT INTO file (run_id, path, size, owner, modified) VALUES (?, ?, ?, ?, ?)",
                          undef, $run_id, $file_path, $stat->size, $owner, $modified);
@@ -122,11 +111,7 @@ sub analyze {
     }, $scan_path);
     
     # Update run record with end date
-    # Format end time
-    my $end_date = scalar(localtime);
-    $end_date =~ s/^(\w+)\s+(\w+)\s+(\d+)\s+(\d+):(\d+):(\d+)\s+(\d+)$/$7-$2-$3 $4:$5:$6/;
-    # Convert month name to number
-    $end_date =~ s/-(\w+)-/-$months{$1}-/;
+    my $end_date = format_datetime(time());
     
     $dbh->do("UPDATE run SET end_date = ? WHERE id = ?", undef, $end_date, $run_id);
     
@@ -447,10 +432,17 @@ sub truncate_path {
     return substr($dir, 0, $available_space) . ".../" . $filename;
 }
 
-# Helper function to format date and time
-sub format_date_time {
-    my ($timestamp) = @_;
-    my ($sec, $min, $hour, $mday, $mon, $year) = localtime($timestamp);
-    return sprintf("%04d-%02d-%02d %02d:%02d:%02d", 
-                  $year + 1900, $mon + 1, $mday, $hour, $min, $sec);
+# Format date and time in YYYY-MM-DD HH:MM:SS format
+sub format_datetime {
+    my ($time) = @_;
+    
+    my $tm = localtime($time);
+    my $year = 1900 + $tm->year;
+    my $month = sprintf("%02d", $tm->mon + 1);
+    my $day = sprintf("%02d", $tm->mday);
+    my $hour = sprintf("%02d", $tm->hour);
+    my $minute = sprintf("%02d", $tm->min);
+    my $second = sprintf("%02d", $tm->sec);
+    
+    return "$year-$month-$day $hour:$minute:$second";
 } 
