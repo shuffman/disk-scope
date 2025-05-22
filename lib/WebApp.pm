@@ -299,18 +299,18 @@ sub format_size {
     return sprintf("%.2f %s", $size, $units[$i]);
 }
 
-# Include templates inline
-app->renderer->add_handler(
-    inline => sub {
-        my ($renderer, $c, $output_ref, $options) = @_;
-        $$output_ref = $options->{inline};
-        return 1;
-    }
-);
+# Set up template
+app->renderer->paths->[0] = app->home->rel_file('templates');
 
-# Define templates
-app->renderer->add_template(
-    index => <<'EOT',
+# Create templates directory if it doesn't exist
+unless (-d app->home->rel_file('templates')) {
+    mkdir app->home->rel_file('templates');
+}
+
+# Write index template to file
+my $template_file = app->home->rel_file('templates/index.html.ep');
+open my $fh, '>', $template_file or die "Could not open $template_file: $!";
+print $fh <<'EOT';
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -761,6 +761,7 @@ app->renderer->add_template(
 </body>
 </html>
 EOT
-);
+
+close $fh;
 
 1; 
