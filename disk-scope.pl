@@ -73,9 +73,7 @@ sub analyze {
     
     # Create a new run record
     my $username = getlogin() || getpwuid($<) || "Unknown";
-    my $now = time();
-    my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($now);
-    my $start_date = strftime("%Y-%m-%d %H:%M:%S", $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst);
+    my $start_date = format_date_time(time());
     
     $dbh->do("INSERT INTO run (start_date, user, path, min_size) VALUES (?, ?, ?, ?)",
              undef, $start_date, $username, $scan_path, $min_size_str);
@@ -94,8 +92,7 @@ sub analyze {
             
             if ($stat && $stat->size >= $min_size) {
                 my $owner = getpwuid($stat->uid) || $stat->uid;
-                my ($f_sec, $f_min, $f_hour, $f_mday, $f_mon, $f_year, $f_wday, $f_yday, $f_isdst) = localtime($stat->mtime);
-                my $modified = strftime("%Y-%m-%d %H:%M:%S", $f_sec, $f_min, $f_hour, $f_mday, $f_mon, $f_year, $f_wday, $f_yday, $f_isdst);
+                my $modified = format_date_time($stat->mtime);
                 
                 $dbh->do("INSERT INTO file (run_id, path, size, owner, modified) VALUES (?, ?, ?, ?, ?)",
                          undef, $run_id, $file_path, $stat->size, $owner, $modified);
@@ -110,9 +107,7 @@ sub analyze {
     }, $scan_path);
     
     # Update run record with end date
-    my $end_time = time();
-    my ($e_sec, $e_min, $e_hour, $e_mday, $e_mon, $e_year, $e_wday, $e_yday, $e_isdst) = localtime($end_time);
-    my $end_date = strftime("%Y-%m-%d %H:%M:%S", $e_sec, $e_min, $e_hour, $e_mday, $e_mon, $e_year, $e_wday, $e_yday, $e_isdst);
+    my $end_date = format_date_time(time());
     $dbh->do("UPDATE run SET end_date = ? WHERE id = ?", undef, $end_date, $run_id);
     
     print "Analysis complete. Found $file_count files >= $min_size_str\n";
@@ -430,4 +425,12 @@ sub truncate_path {
     }
     
     return substr($dir, 0, $available_space) . ".../" . $filename;
+}
+
+# Helper function to format date and time
+sub format_date_time {
+    my ($timestamp) = @_;
+    my ($sec, $min, $hour, $mday, $mon, $year) = localtime($timestamp);
+    return sprintf("%04d-%02d-%02d %02d:%02d:%02d", 
+                  $year + 1900, $mon + 1, $mday, $hour, $min, $sec);
 } 
