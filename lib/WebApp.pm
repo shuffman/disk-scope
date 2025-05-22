@@ -8,6 +8,7 @@ use Data::Dumper;
 use Time::localtime;
 use Time::Local qw(timelocal);
 use POSIX qw(strftime);
+use Mojolicious::Lite;
 
 # Routes for the web interface
 get '/' => sub {
