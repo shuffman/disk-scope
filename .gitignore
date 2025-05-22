@@ -1,0 +1,14 @@
+# SQLite database files
+*.db
+
+# Database journal files
+*.db-journal
+
+# Database backup files
+*.db.bak
+*.bak
+
+# Temporary files
+*.tmp
+*~
+.DS_Store 
