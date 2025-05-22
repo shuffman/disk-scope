@@ -1,0 +1,43 @@
+% layout 'default';
+% title 'Disk Scope - Test Run Data';
+
+<div class="container">
+  <h1 class="mt-4 mb-4">Disk Scope - Test Run Data</h1>
+  
+  <div class="card mb-4">
+    <div class="card-header">API Test</div>
+    <div class="card-body">
+      <div class="form-group mb-3">
+        <label for="run-id">Run ID:</label>
+        <input type="number" id="run-id" class="form-control" value="1" min="1" style="width: 200px;">
+      </div>
+      
+      <button id="test-api" class="btn btn-primary mb-3">Load Run Data</button>
+      
+      <div class="mt-3">
+        <h5>Run Details:</h5>
+        <pre id="run-response" class="bg-light p-3">Click the button to test...</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Set up API test button
+    document.getElementById('test-api').addEventListener('click', function() {
+      const runId = document.getElementById('run-id').value || 1;
+      const responseElement = document.getElementById('run-response');
+      
+      // Test run API
+      fetch(`/api/runs/${runId}`)
+        .then(response => response.json())
+        .then(data => {
+          responseElement.textContent = JSON.stringify(data, null, 2);
+        })
+        .catch(error => {
+          responseElement.textContent = `Error: ${error.message}`;
+        });
+    });
+  });
+</script> 

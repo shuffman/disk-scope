@@ -170,8 +170,16 @@ sub report {
     my $dbh = init_db($db_path);
     
     # Verify run exists
-    my $run = $dbh->selectrow_hashref("SELECT * FROM run WHERE id = ?", undef, $run_id);
-    die "Run ID $run_id not found in database\n" unless $run;
+    my $run_sth = $dbh->prepare("SELECT * FROM run WHERE id = ?");
+    $run_sth->execute($run_id);
+    my $run = $run_sth->fetchrow_hashref;
+    
+    unless ($run) {
+        $run_sth->finish();
+        $dbh->disconnect();
+        die "Run ID $run_id not found in database\n";
+    }
+    $run_sth->finish();
     
     # Prepare file query
     my $sql = "SELECT path, size, owner, modified FROM file WHERE run_id = ? AND size >= ?";
@@ -210,6 +218,7 @@ sub report {
             }
         }
     }
+    $sth->finish();
     
     # Print report
     print "\nDisk Usage Report for Run ID: $run_id\n";
@@ -270,7 +279,17 @@ sub web {
     
     # Define route for home page
     get '/' => sub ($c) {
-        $c->render(template => 'index');
+        return $c->render(template => 'index');
+    };
+    
+    # Diagnostics route
+    get '/diagnostics' => sub ($c) {
+        return $c->render(template => 'diagnostics');
+    };
+    
+    # Test run data route
+    get '/test_run' => sub ($c) {
+        return $c->render(template => 'test_run');
     };
     
     # API route to get all runs
@@ -309,9 +328,11 @@ sub web {
         my $run = $run_sth->fetchrow_hashref;
         
         unless ($run) {
+            $run_sth->finish();
             $dbh->disconnect();
             return $c->render(json => { error => "Run ID $run_id not found" }, status => 404);
         }
+        $run_sth->finish();
         
         # Get file statistics
         my $stats = {
@@ -390,6 +411,7 @@ sub web {
             $stats->{owner_distribution}{$owner}{count}++;
             $stats->{owner_distribution}{$owner}{size} += $file->{size};
         }
+        $files_sth->finish();
         
         # Format sizes
         $stats->{formatted_total_size} = format_size($stats->{total_size});
@@ -418,6 +440,7 @@ sub web {
             $file->{formatted_size} = format_size($file->{size});
             push @top_files, $file;
         }
+        $top_files_sth->finish();
         
         $stats->{top_files} = \@top_files;
         
@@ -472,6 +495,7 @@ sub web {
                 push @counts, $row->{count};
                 push @sizes, $row->{total_size};
             }
+            $sth->finish();
             
             $data = {
                 categories => \@categories,
@@ -502,11 +526,57 @@ sub web {
                 push @counts, $row->{count};
                 push @sizes, $row->{total_size};
             }
+            $sth->finish();
             
             $data = {
                 owners => \@owners,
                 counts => \@counts,
                 sizes => \@sizes,
+                formatted_sizes => [map { format_size($_) } @sizes],
+            };
+        } elsif ($viz_type eq 'extension_distribution') {
+            # Get total size for percentage calculation
+            my $total_sth = $dbh->prepare("SELECT SUM(size) as total_size FROM file WHERE run_id = ?");
+            $total_sth->execute($run_id);
+            my $total_row = $total_sth->fetchrow_hashref;
+            my $total_size = $total_row->{total_size} || 1; # Avoid division by zero
+            $total_sth->finish();
+            
+            # Extract file extensions and group by them
+            my $query = "SELECT 
+                LOWER(CASE 
+                    WHEN path LIKE '%.%' THEN SUBSTR(path, INSTR(path, '.', -1) + 1)
+                    ELSE 'no extension'
+                END) as extension,
+                COUNT(*) as count,
+                SUM(size) as total_size
+                FROM file 
+                WHERE run_id = ?
+                GROUP BY extension
+                ORDER BY total_size DESC
+                LIMIT 10";
+            
+            my $sth = $dbh->prepare($query);
+            $sth->execute($run_id);
+            
+            my @extensions;
+            my @counts;
+            my @sizes;
+            my @percentages;
+            
+            while (my $row = $sth->fetchrow_hashref) {
+                push @extensions, $row->{extension};
+                push @counts, $row->{count};
+                push @sizes, $row->{total_size};
+                push @percentages, ($row->{total_size} / $total_size) * 100;
+            }
+            $sth->finish();
+            
+            $data = {
+                extensions => \@extensions,
+                counts => \@counts,
+                sizes => \@sizes,
+                percentages => \@percentages,
                 formatted_sizes => [map { format_size($_) } @sizes],
             };
         }

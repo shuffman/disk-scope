@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .chart-container {
+      width: 600px;
+      height: 400px;
+      margin: 50px auto;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 10px;
+      margin: 20px;
+      border-radius: 5px;
+      overflow: auto;
+    }
+    button {
+      display: block;
+      margin: 20px auto;
+      padding: 10px 20px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    input {
+      display: block;
+      margin: 20px auto;
+      padding: 10px;
+      width: 200px;
+    }
+  </style>
+</head>
+<body>
+  <h1 style="text-align: center;">Disk Scope API Test</h1>
+  
+  <input type="number" id="run-id" placeholder="Enter Run ID" value="1">
+  <button id="test-button">Test API and Chart</button>
+  
+  <h2 style="text-align: center;">Extension Distribution</h2>
+  <div class="chart-container">
+    <canvas id="extension-chart"></canvas>
+  </div>
+  
+  <h3 style="text-align: center;">API Response</h3>
+  <pre id="json-response">Click button to fetch data...</pre>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const button = document.getElementById('test-button');
+      const runIdInput = document.getElementById('run-id');
+      const jsonResponse = document.getElementById('json-response');
+      
+      button.addEventListener('click', function() {
+        const runId = runIdInput.value || 1;
+        
+        // Clear any existing chart
+        if (window.extensionChart instanceof Chart) {
+          window.extensionChart.destroy();
+        }
+        
+        // Fetch extension distribution data
+        console.log(`Fetching data for run ID: ${runId}`);
+        jsonResponse.textContent = 'Loading...';
+        
+        fetch(`/api/runs/${runId}/visualization/extension_distribution`)
+          .then(response => {
+            console.log('Response status:', response.status);
+            return response.json();
+          })
+          .then(data => {
+            console.log('Data received:', data);
+            jsonResponse.textContent = JSON.stringify(data, null, 2);
+            
+            // Create chart if we have data
+            if (data && data.extensions && data.extensions.length > 0) {
+              createChart(data);
+            } else {
+              jsonResponse.textContent = 'No data received or empty data set.';
+            }
+          })
+          .catch(error => {
+            console.error('Error:', error);
+            jsonResponse.textContent = `Error: ${error.message}`;
+          });
+      });
+      
+      function createChart(data) {
+        const ctx = document.getElementById('extension-chart').getContext('2d');
+        
+        // Format percentages to 1 decimal place
+        const formattedPercentages = data.percentages.map(p => parseFloat(p.toFixed(1)));
+        
+        window.extensionChart = new Chart(ctx, {
+          type: 'pie',
+          data: {
+            labels: data.extensions.map((ext, i) => `${ext} (${formattedPercentages[i]}%)`),
+            datasets: [
+              {
+                data: formattedPercentages,
+                backgroundColor: [
+                  'rgba(255, 99, 132, 0.7)',
+                  'rgba(54, 162, 235, 0.7)',
+                  'rgba(255, 206, 86, 0.7)',
+                  'rgba(75, 192, 192, 0.7)',
+                  'rgba(153, 102, 255, 0.7)',
+                  'rgba(255, 159, 64, 0.7)',
+                  'rgba(199, 199, 199, 0.7)',
+                  'rgba(83, 102, 255, 0.7)',
+                  'rgba(40, 159, 64, 0.7)',
+                  'rgba(210, 199, 199, 0.7)'
+                ],
+                borderWidth: 1
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html> 

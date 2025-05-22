@@ -16,6 +16,12 @@ get '/' => sub {
     $c->render(template => 'index', format => 'html');
 };
 
+# Diagnostics route
+get '/diagnostics' => sub {
+    my $c = shift;
+    return $c->render(template => 'diagnostics');
+};
+
 # API route to get all runs
 get '/api/runs' => sub {
     my $c = shift;
@@ -36,7 +42,9 @@ get '/api/runs' => sub {
         $row->{formatted_size} = format_size($row->{total_size});
         
         push @runs, $row;
+        $count_sth->finish();
     }
+    $sth->finish();
     
     $dbh->disconnect();
     
@@ -54,9 +62,11 @@ get '/api/runs/:id' => sub {
     my $run = $run_sth->fetchrow_hashref;
     
     unless ($run) {
+        $run_sth->finish();
         $dbh->disconnect();
         return $c->render(json => { error => "Run ID $run_id not found" }, status => 404);
     }
+    $run_sth->finish();
     
     # Get file statistics
     my $stats = {
@@ -135,6 +145,7 @@ get '/api/runs/:id' => sub {
         $stats->{owner_distribution}{$owner}{count}++;
         $stats->{owner_distribution}{$owner}{size} += $file->{size};
     }
+    $files_sth->finish();
     
     # Format sizes
     $stats->{formatted_total_size} = format_size($stats->{total_size});
@@ -163,6 +174,7 @@ get '/api/runs/:id' => sub {
         $file->{formatted_size} = format_size($file->{size});
         push @top_files, $file;
     }
+    $top_files_sth->finish();
     
     $stats->{top_files} = \@top_files;
     
@@ -225,6 +237,7 @@ get '/api/runs/:id/visualization/:type' => sub {
             sizes => \@sizes,
             formatted_sizes => [map { format_size($_) } @sizes],
         };
+        $sth->finish();
     } elsif ($viz_type eq 'owner_distribution') {
         my $query = "SELECT 
             owner, 
@@ -253,6 +266,52 @@ get '/api/runs/:id/visualization/:type' => sub {
             owners => \@owners,
             counts => \@counts,
             sizes => \@sizes,
+            formatted_sizes => [map { format_size($_) } @sizes],
+        };
+        $sth->finish();
+    } elsif ($viz_type eq 'extension_distribution') {
+        # Get total size for percentage calculation
+        my $total_sth = $dbh->prepare("SELECT SUM(size) as total_size FROM file WHERE run_id = ?");
+        $total_sth->execute($run_id);
+        my $total_row = $total_sth->fetchrow_hashref;
+        my $total_size = $total_row->{total_size} || 1; # Avoid division by zero
+        $total_sth->finish();
+        
+        # Extract file extensions and group by them
+        my $query = "SELECT 
+            LOWER(CASE 
+                WHEN path LIKE '%.%' THEN SUBSTR(path, INSTR(path, '.', -1) + 1)
+                ELSE 'no extension'
+            END) as extension,
+            COUNT(*) as count,
+            SUM(size) as total_size
+            FROM file 
+            WHERE run_id = ?
+            GROUP BY extension
+            ORDER BY total_size DESC
+            LIMIT 10";
+        
+        my $sth = $dbh->prepare($query);
+        $sth->execute($run_id);
+        
+        my @extensions;
+        my @counts;
+        my @sizes;
+        my @percentages;
+        
+        while (my $row = $sth->fetchrow_hashref) {
+            push @extensions, $row->{extension};
+            push @counts, $row->{count};
+            push @sizes, $row->{total_size};
+            push @percentages, ($row->{total_size} / $total_size) * 100;
+        }
+        $sth->finish();
+        
+        $data = {
+            extensions => \@extensions,
+            counts => \@counts,
+            sizes => \@sizes,
+            percentages => \@percentages,
             formatted_sizes => [map { format_size($_) } @sizes],
         };
     }

@@ -74,6 +74,34 @@
         </div>
 
         <div class="row mt-4">
+          <div class="col-md-12">
+            <div class="card">
+              <div class="card-header">File Extensions (% of Total Size)</div>
+              <div class="card-body">
+                <div class="chart-container">
+                  <canvas id="extension-chart"></canvas>
+                </div>
+                <div class="mt-3">
+                  <table class="table table-striped sortable">
+                    <thead>
+                      <tr>
+                        <th>Extension</th>
+                        <th>File Count</th>
+                        <th>Total Size</th>
+                        <th>Percentage</th>
+                      </tr>
+                    </thead>
+                    <tbody id="extension-distribution-table">
+                      <!-- Extension distribution data will be loaded here -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row mt-4">
           <div class="col-md-6">
             <div class="card">
               <div class="card-header">Size Distribution</div>
@@ -148,23 +176,29 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
+    console.log('Document ready, initializing application');
     fetchRuns();
   });
 
   // Function to fetch runs from API
   function fetchRuns() {
+    console.log('Fetching runs');
     fetch('/api/runs')
       .then(response => response.json())
       .then(runs => {
+        console.log('Runs received:', runs);
         displayRuns(runs);
       })
       .catch(error => {
         console.error('Error fetching runs:', error);
-        document.getElementById('loader').innerHTML = 
-          '<div class="alert alert-danger m-3">Error loading runs. Please check your database connection.</div>';
+        document.getElementById('loader').innerHTML = `
+          <div class="alert alert-danger m-3">
+            Error loading runs. Please check your database connection.<br>
+            Details: ${error}
+          </div>
+        `;
       });
   }
 
@@ -195,6 +229,7 @@
           </div>
         </div>
       `;
+      
       li.addEventListener('click', function() {
         document.querySelectorAll('.run-item').forEach(item => {
           item.classList.remove('active');
@@ -202,23 +237,38 @@
         this.classList.add('active');
         fetchRunDetails(run.id);
       });
+      
       runsList.appendChild(li);
     });
   }
 
   // Function to fetch run details
   function fetchRunDetails(runId) {
+    console.log('Fetching run details for ID:', runId);
     document.getElementById('welcome-message').style.display = 'none';
     document.getElementById('run-details').style.display = 'none';
     
     fetch(`/api/runs/${runId}`)
       .then(response => response.json())
       .then(data => {
+        console.log('Run details received:', data);
         displayRunDetails(data.run, data.stats);
         fetchVisualizations(runId);
       })
       .catch(error => {
         console.error('Error fetching run details:', error);
+        const welcomeMessage = document.getElementById('welcome-message');
+        welcomeMessage.innerHTML = `
+          <div class="card">
+            <div class="card-body text-center">
+              <div class="alert alert-danger">
+                Error loading run details. Please check your database connection.<br>
+                Details: ${error}
+              </div>
+            </div>
+          </div>
+        `;
+        welcomeMessage.style.display = 'block';
       });
   }
 
@@ -278,17 +328,23 @@
     document.getElementById('run-details').style.display = 'block';
     
     // Make tables sortable after populating
-    sorttable.makeSortable(document.getElementById('files-table-body').closest('table'));
-    sorttable.makeSortable(document.getElementById('size-distribution-table').closest('table'));
-    sorttable.makeSortable(document.getElementById('age-distribution-table').closest('table'));
+    sorttable.makeSortable(filesTableBody.closest('table'));
+    sorttable.makeSortable(sizeDistTable.closest('table'));
+    sorttable.makeSortable(ageDistTable.closest('table'));
   }
 
   // Function to fetch and display visualizations
   function fetchVisualizations(runId) {
+    console.log('Fetching visualizations for run ID:', runId);
+    
     // Fetch size distribution data
     fetch(`/api/runs/${runId}/visualization/size_distribution`)
-      .then(response => response.json())
+      .then(response => {
+        console.log('Size distribution response status:', response.status);
+        return response.json();
+      })
       .then(data => {
+        console.log('Size distribution data:', data);
         createSizeChart(data);
       })
       .catch(error => {
@@ -297,114 +353,271 @@
     
     // Fetch owner distribution data
     fetch(`/api/runs/${runId}/visualization/owner_distribution`)
-      .then(response => response.json())
+      .then(response => {
+        console.log('Owner distribution response status:', response.status);
+        return response.json();
+      })
       .then(data => {
+        console.log('Owner distribution data:', data);
         createOwnerChart(data);
       })
       .catch(error => {
         console.error('Error fetching owner distribution:', error);
       });
+      
+    // Fetch extension distribution data
+    fetch(`/api/runs/${runId}/visualization/extension_distribution`)
+      .then(response => {
+        console.log('Extension distribution response status:', response.status);
+        return response.json();
+      })
+      .then(data => {
+        console.log('Extension distribution data:', data);
+        createExtensionChart(data);
+        populateExtensionTable(data);
+      })
+      .catch(error => {
+        console.error('Error fetching extension distribution:', error);
+      });
   }
 
   // Function to create size distribution chart
   function createSizeChart(data) {
-    const ctx = document.getElementById('size-chart').getContext('2d');
-    
-    // Destroy existing chart if it exists
-    if (window.sizeChart instanceof Chart) {
-      window.sizeChart.destroy();
-    }
-    
-    window.sizeChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: data.categories,
-        datasets: [
-          {
-            label: 'File Count',
-            data: data.counts,
-            backgroundColor: 'rgba(54, 162, 235, 0.5)',
-            borderColor: 'rgba(54, 162, 235, 1)',
-            borderWidth: 1,
-            yAxisID: 'y',
-          },
-          {
-            label: 'Total Size',
-            data: data.sizes,
-            backgroundColor: 'rgba(255, 99, 132, 0.5)',
-            borderColor: 'rgba(255, 99, 132, 1)',
-            borderWidth: 1,
-            yAxisID: 'y1',
-            type: 'line',
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            type: 'linear',
-            display: true,
-            position: 'left',
-            title: {
-              display: true,
-              text: 'File Count'
-            }
-          },
-          y1: {
-            type: 'linear',
-            display: true,
-            position: 'right',
-            title: {
-              display: true,
-              text: 'Total Size (bytes)'
+    try {
+      console.log('Creating size chart with data:', data);
+      const canvas = document.getElementById('size-chart');
+      if (!canvas) {
+        console.error('Canvas element with ID "size-chart" not found!');
+        return;
+      }
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.error('Failed to get 2D context from canvas!');
+        return;
+      }
+      
+      // Destroy existing chart if it exists
+      if (window.sizeChart instanceof Chart) {
+        window.sizeChart.destroy();
+      }
+      
+      window.sizeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.categories,
+          datasets: [
+            {
+              label: 'File Count',
+              data: data.counts,
+              backgroundColor: 'rgba(54, 162, 235, 0.5)',
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 1,
+              yAxisID: 'y',
             },
-            grid: {
-              drawOnChartArea: false
+            {
+              label: 'Total Size',
+              data: data.sizes,
+              backgroundColor: 'rgba(255, 99, 132, 0.5)',
+              borderColor: 'rgba(255, 99, 132, 1)',
+              borderWidth: 1,
+              yAxisID: 'y1',
+              type: 'line',
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+              title: {
+                display: true,
+                text: 'File Count'
+              }
+            },
+            y1: {
+              type: 'linear',
+              display: true,
+              position: 'right',
+              title: {
+                display: true,
+                text: 'Total Size (bytes)'
+              },
+              grid: {
+                drawOnChartArea: false
+              }
             }
           }
         }
-      }
-    });
+      });
+      console.log('Size chart created successfully');
+    } catch (error) {
+      console.error('Error creating size chart:', error);
+    }
   }
 
   // Function to create owner distribution chart
   function createOwnerChart(data) {
-    const ctx = document.getElementById('owner-chart').getContext('2d');
-    
-    // Destroy existing chart if it exists
-    if (window.ownerChart instanceof Chart) {
-      window.ownerChart.destroy();
-    }
-    
-    window.ownerChart = new Chart(ctx, {
-      type: 'pie',
-      data: {
-        labels: data.owners,
-        datasets: [
-          {
-            data: data.sizes,
-            backgroundColor: [
-              'rgba(255, 99, 132, 0.7)',
-              'rgba(54, 162, 235, 0.7)',
-              'rgba(255, 206, 86, 0.7)',
-              'rgba(75, 192, 192, 0.7)',
-              'rgba(153, 102, 255, 0.7)',
-              'rgba(255, 159, 64, 0.7)',
-              'rgba(199, 199, 199, 0.7)',
-              'rgba(83, 102, 255, 0.7)',
-              'rgba(40, 159, 64, 0.7)',
-              'rgba(210, 199, 199, 0.7)'
-            ],
-            borderWidth: 1
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false
+    try {
+      console.log('Creating owner chart with data:', data);
+      const canvas = document.getElementById('owner-chart');
+      if (!canvas) {
+        console.error('Canvas element with ID "owner-chart" not found!');
+        return;
       }
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.error('Failed to get 2D context from canvas!');
+        return;
+      }
+      
+      // Destroy existing chart if it exists
+      if (window.ownerChart instanceof Chart) {
+        window.ownerChart.destroy();
+      }
+      
+      window.ownerChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: data.owners,
+          datasets: [
+            {
+              data: data.sizes,
+              backgroundColor: [
+                'rgba(255, 99, 132, 0.7)',
+                'rgba(54, 162, 235, 0.7)',
+                'rgba(255, 206, 86, 0.7)',
+                'rgba(75, 192, 192, 0.7)',
+                'rgba(153, 102, 255, 0.7)',
+                'rgba(255, 159, 64, 0.7)',
+                'rgba(199, 199, 199, 0.7)',
+                'rgba(83, 102, 255, 0.7)',
+                'rgba(40, 159, 64, 0.7)',
+                'rgba(210, 199, 199, 0.7)'
+              ],
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+      console.log('Owner chart created successfully');
+    } catch (error) {
+      console.error('Error creating owner chart:', error);
+    }
+  }
+  
+  // Function to create extension distribution chart
+  function createExtensionChart(data) {
+    try {
+      console.log('Creating extension chart with data:', data);
+      const canvas = document.getElementById('extension-chart');
+      if (!canvas) {
+        console.error('Canvas element with ID "extension-chart" not found!');
+        return;
+      }
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.error('Failed to get 2D context from canvas!');
+        return;
+      }
+      
+      // Destroy existing chart if it exists
+      if (window.extensionChart instanceof Chart) {
+        window.extensionChart.destroy();
+      }
+      
+      // Format percentages to 1 decimal place
+      const formattedPercentages = data.percentages.map(p => parseFloat(p.toFixed(1)));
+      
+      window.extensionChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: data.extensions.map((ext, i) => `${ext} (${formattedPercentages[i]}%)`),
+          datasets: [
+            {
+              data: formattedPercentages,
+              backgroundColor: [
+                'rgba(255, 99, 132, 0.7)',
+                'rgba(54, 162, 235, 0.7)',
+                'rgba(255, 206, 86, 0.7)',
+                'rgba(75, 192, 192, 0.7)',
+                'rgba(153, 102, 255, 0.7)',
+                'rgba(255, 159, 64, 0.7)',
+                'rgba(199, 199, 199, 0.7)',
+                'rgba(83, 102, 255, 0.7)',
+                'rgba(40, 159, 64, 0.7)',
+                'rgba(210, 199, 199, 0.7)'
+              ],
+              borderColor: [
+                'rgba(255, 99, 132, 1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)',
+                'rgba(199, 199, 199, 1)',
+                'rgba(83, 102, 255, 1)',
+                'rgba(40, 159, 64, 1)',
+                'rgba(210, 199, 199, 1)'
+              ],
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const index = context.dataIndex;
+                  const extension = data.extensions[index];
+                  const count = data.counts[index];
+                  const size = data.formatted_sizes[index];
+                  return `${extension}: ${size} (${count} files)`;
+                }
+              }
+            },
+            legend: {
+              position: 'right'
+            }
+          }
+        }
+      });
+      console.log('Extension chart created successfully');
+    } catch (error) {
+      console.error('Error creating extension chart:', error);
+    }
+  }
+
+  // Function to populate the extension distribution table
+  function populateExtensionTable(data) {
+    const tableBody = document.getElementById('extension-distribution-table');
+    tableBody.innerHTML = '';
+    
+    data.extensions.forEach((extension, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${extension}</td>
+        <td>${data.counts[i].toLocaleString()}</td>
+        <td>${data.formatted_sizes[i]}</td>
+        <td>${data.percentages[i].toFixed(1)}%</td>
+      `;
+      tableBody.appendChild(tr);
     });
+    
+    // Make the table sortable
+    sorttable.makeSortable(tableBody.closest('table'));
   }
 </script>

@@ -1,0 +1,111 @@
+% layout 'default';
+% title 'Disk Scope - Diagnostics';
+
+<div class="container">
+  <h1 class="mt-4 mb-4">Disk Scope Diagnostics</h1>
+  
+  <div class="card mb-4">
+    <div class="card-header">Basic Chart Test</div>
+    <div class="card-body">
+      <div class="chart-container">
+        <canvas id="test-chart"></canvas>
+      </div>
+    </div>
+  </div>
+  
+  <div class="card mb-4">
+    <div class="card-header">API Tests</div>
+    <div class="card-body">
+      <div class="form-group mb-3">
+        <label for="run-id">Run ID:</label>
+        <input type="number" id="run-id" class="form-control" value="1" min="1" style="width: 200px;">
+      </div>
+      
+      <button id="test-api" class="btn btn-primary mb-3">Test API Endpoints</button>
+      
+      <div class="mt-3">
+        <h5>API Responses:</h5>
+        <div class="api-response-container">
+          <h6>Size Distribution:</h6>
+          <pre id="size-response" class="bg-light p-3">Click the button to test...</pre>
+          
+          <h6>Owner Distribution:</h6>
+          <pre id="owner-response" class="bg-light p-3">Click the button to test...</pre>
+          
+          <h6>Extension Distribution:</h6>
+          <pre id="extension-response" class="bg-light p-3">Click the button to test...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Create a simple test chart
+    try {
+      const ctx = document.getElementById('test-chart').getContext('2d');
+      new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: ['Red', 'Blue', 'Yellow', 'Green', 'Purple', 'Orange'],
+          datasets: [{
+            label: 'Test Dataset',
+            data: [12, 19, 3, 5, 2, 3],
+            backgroundColor: [
+              'rgba(255, 99, 132, 0.7)',
+              'rgba(54, 162, 235, 0.7)',
+              'rgba(255, 206, 86, 0.7)',
+              'rgba(75, 192, 192, 0.7)',
+              'rgba(153, 102, 255, 0.7)',
+              'rgba(255, 159, 64, 0.7)'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+      console.log('Test chart created successfully');
+    } catch (error) {
+      console.error('Error creating test chart:', error);
+    }
+    
+    // Set up API test button
+    document.getElementById('test-api').addEventListener('click', function() {
+      const runId = document.getElementById('run-id').value || 1;
+      
+      // Test size distribution API
+      fetch(`/api/runs/${runId}/visualization/size_distribution`)
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('size-response').textContent = JSON.stringify(data, null, 2);
+        })
+        .catch(error => {
+          document.getElementById('size-response').textContent = `Error: ${error.message}`;
+        });
+      
+      // Test owner distribution API
+      fetch(`/api/runs/${runId}/visualization/owner_distribution`)
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('owner-response').textContent = JSON.stringify(data, null, 2);
+        })
+        .catch(error => {
+          document.getElementById('owner-response').textContent = `Error: ${error.message}`;
+        });
+      
+      // Test extension distribution API
+      fetch(`/api/runs/${runId}/visualization/extension_distribution`)
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('extension-response').textContent = JSON.stringify(data, null, 2);
+        })
+        .catch(error => {
+          document.getElementById('extension-response').textContent = `Error: ${error.message}`;
+        });
+    });
+  });
+</script> 
