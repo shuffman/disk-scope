@@ -13,7 +13,7 @@ use Mojolicious::Lite;
 # Routes for the web interface
 get '/' => sub {
     my $c = shift;
-    $c->render(template => 'index');
+    $c->render(template => 'index', handler => 'ep');
 };
 
 # API route to get all runs
@@ -55,7 +55,7 @@ get '/api/runs/:id' => sub {
     
     unless ($run) {
         $dbh->disconnect();
-        return $c->render(json => { error => "Run ID $run_id not found" }, status => 404);
+        return ($c->render(json => { error => "Run ID $run_id not found" }, status => 404));
     }
     
     # Get file statistics
