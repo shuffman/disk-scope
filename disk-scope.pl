@@ -7,6 +7,7 @@ use DBI;
 use File::Find;
 use File::Basename;
 use Time::localtime;
+use Time::Local qw(timelocal timegm);
 use POSIX qw(strftime);
 use FindBin qw($Bin);
 use lib "$Bin/lib";
@@ -404,7 +405,7 @@ sub str2time {
     
     if ($datetime =~ /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/) {
         my ($year, $month, $day, $hour, $min, $sec) = ($1, $2, $3, $4, $5, $6);
-        return mktime($sec, $min, $hour, $day, $month - 1, $year - 1900);
+        return timelocal($sec, $min, $hour, $day, $month - 1, $year - 1900);
     }
     
     return 0;
