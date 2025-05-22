@@ -73,7 +73,9 @@ sub analyze {
     
     # Create a new run record
     my $username = getlogin() || getpwuid($<) || "Unknown";
-    my $start_date = strftime("%Y-%m-%d %H:%M:%S", localtime);
+    my $t = time();
+    my @lt = localtime($t);
+    my $start_date = strftime("%Y-%m-%d %H:%M:%S", @lt);
     
     $dbh->do("INSERT INTO run (start_date, user, path, min_size) VALUES (?, ?, ?, ?)",
              undef, $start_date, $username, $scan_path, $min_size_str);
@@ -92,7 +94,8 @@ sub analyze {
             
             if ($stat && $stat->size >= $min_size) {
                 my $owner = getpwuid($stat->uid) || $stat->uid;
-                my $modified = strftime("%Y-%m-%d %H:%M:%S", localtime($stat->mtime));
+                my @mod_time = localtime($stat->mtime);
+                my $modified = strftime("%Y-%m-%d %H:%M:%S", @mod_time);
                 
                 $dbh->do("INSERT INTO file (run_id, path, size, owner, modified) VALUES (?, ?, ?, ?, ?)",
                          undef, $run_id, $file_path, $stat->size, $owner, $modified);
@@ -107,7 +110,9 @@ sub analyze {
     }, $scan_path);
     
     # Update run record with end date
-    my $end_date = strftime("%Y-%m-%d %H:%M:%S", localtime);
+    my $t_end = time();
+    my @lt_end = localtime($t_end);
+    my $end_date = strftime("%Y-%m-%d %H:%M:%S", @lt_end);
     $dbh->do("UPDATE run SET end_date = ? WHERE id = ?", undef, $end_date, $run_id);
     
     print "Analysis complete. Found $file_count files >= $min_size_str\n";
